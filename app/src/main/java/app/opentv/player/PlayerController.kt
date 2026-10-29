@@ -101,6 +101,8 @@ class PlayerController(
         val url: String,
         val title: String,
         val userAgent: String,
+        /** Per-channel headers supplied by M3U directives (cookies, referer, origin, etc.). */
+        val headers: Map<String, String> = emptyMap(),
         /** Live streams are never resumed; VOD is. */
         val startPositionMillis: Long = 0L,
         val isLive: Boolean = true,
@@ -269,7 +271,17 @@ class PlayerController(
             if (debounce) delay(switchDebounceMillis)
 
             consecutiveFailures = 0
-            httpFactory.setDefaultRequestProperties(mapOf("User-Agent" to request.userAgent))
+            httpFactory.setDefaultRequestProperties(
+                buildMap {
+                    put("User-Agent", request.userAgent)
+                    request.headers.forEach { (name, value) ->
+                        if (name.isNotBlank() && value.isNotBlank() &&
+                            !name.equals("Host", ignoreCase = true) &&
+                            !name.equals("Content-Length", ignoreCase = true)
+                        ) put(name, value)
+                    }
+                },
+            )
             _state.value = State.Buffering(request.title)
 
             val mediaItem = MediaItem.Builder()
