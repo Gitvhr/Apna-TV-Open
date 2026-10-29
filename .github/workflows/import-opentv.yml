@@ -15,47 +15,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Import OpenTV source while preserving Apna TV setup files
+      - name: Import OpenTV source
         shell: bash
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/opentvproject/opentv.git /tmp/opentv
-          rsync -a --delete             --exclude='.git/'             --exclude='.github/workflows/import-opentv.yml'             /tmp/opentv/ ./
-          # Restore the import workflow if upstream has a same-named file/tree.
-          mkdir -p .github/workflows
-          cat > .github/workflows/import-opentv.yml <<'WORKFLOW'
-          name: Import OpenTV upstream
-
-          on:
-            workflow_dispatch:
-
-          permissions:
-            contents: write
-
-          jobs:
-            import-upstream:
-              runs-on: ubuntu-latest
-              steps:
-                - name: Check out Apna TV repository
-                  uses: actions/checkout@v4
-                  with:
-                    fetch-depth: 0
-                - name: Import OpenTV source while preserving Apna TV setup files
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    git clone --depth 1 https://github.com/opentvproject/opentv.git /tmp/opentv
-                    rsync -a --delete --exclude='.git/' --exclude='.github/workflows/import-opentv.yml' /tmp/opentv/ ./
-                    git config user.name "github-actions[bot]"
-                    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                    git add -A
-                    if git diff --cached --quiet; then
-                      echo "No source changes to import."
-                      exit 0
-                    fi
-                    git commit -m "Import OpenTV upstream source"
-                    git push
-          WORKFLOW
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.github/workflows/import-opentv.yml' \
+            --exclude='APNA_TV_SETUP.md' \
+            /tmp/opentv/ ./
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
