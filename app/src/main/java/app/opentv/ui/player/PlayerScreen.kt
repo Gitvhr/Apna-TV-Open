@@ -114,6 +114,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
+import org.json.JSONObject
 
 /**
  * Full-screen live playback.
@@ -224,11 +225,38 @@ fun PlayerScreen(
             val source = graph.sourceRepository.byId(channel.sourceId)
             // Xtream/M3U carry a ready URL; a Stalker channel's URL is minted here from its cmd.
             val url = graph.catalogRepository.resolvePlaybackUrl(channel, source)
+            val metadata = channel.cmd
+                ?.takeIf { it.startsWith("m3u-meta:") }
+                ?.removePrefix("m3u-meta:")
+                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+            val headers = linkedMapOf<String, String>()
+            metadata?.keys()?.forEach { key ->
+                val value = metadata.optString(key).trim()
+                when {
+                    key.startsWith("header:", ignoreCase = true) ->
+                        headers[key.substringAfter(':')] = value
+                    key.equals("http-user-agent", ignoreCase = true) ->
+                        headers["User-Agent"] = value
+                    key.equals("http-referrer", ignoreCase = true) ->
+                        headers["Referer"] = value
+                    key.equals("http-origin", ignoreCase = true) ->
+                        headers["Origin"] = value
+                    key.endsWith("stream_headers", ignoreCase = true) ->
+                        value.split('\\n', '&').forEach { item ->
+                            val split = item.indexOf('=')
+                            if (split > 0) headers[item.substring(0, split).trim()] = item.substring(split + 1).trim()
+                        }
+                }
+            }
+            val userAgent = headers.remove("User-Agent")
+                ?: source?.userAgent
+                ?: "OpenTV/0.1 (Android)"
             controller.play(
                 PlayerController.Request(
                     url = url,
                     title = channel.shownName,
-                    userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
+                    userAgent = userAgent,
+                    headers = headers,
                     isLive = true,
                 ),
                 debounce = false,
