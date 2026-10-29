@@ -8,6 +8,7 @@ package app.opentv.data.parser
 import app.opentv.data.model.Channel
 import java.io.BufferedReader
 import java.io.InputStream
+import org.json.JSONObject
 
 /**
  * Streaming M3U/M3U8 playlist parser.
@@ -45,7 +46,8 @@ object M3uParser {
         var pendingName: String? = null
         var pendingAttributes: Map<String, String> = emptyMap()
         var pendingNumber: Int? = null
-        // #EXTVLCOPT / #EXTHTTP lines that apply to the next URL.
+        // Per-entry Kodi/VLC directives are retained in the existing M3U cmd field.
+        var pendingDirectives = linkedMapOf<String, String>()
         var index = 0
 
         reader.forEachLine { rawLine ->
@@ -64,6 +66,31 @@ object M3uParser {
                     pendingAttributes = parseAttributes(line)
                     pendingName = displayNameOf(line, pendingAttributes)
                     pendingNumber = pendingAttributes["tvg-chno"]?.toIntOrNull()
+                }
+
+                line.startsWith("#KODIPROP:", ignoreCase = true) -> {
+                    val directive = line.substringAfter(':')
+                    val split = directive.indexOf('=')
+                    if (split > 0) {
+                        pendingDirectives[directive.substring(0, split).trim()] =
+                            directive.substring(split + 1).trim()
+                    }
+                }
+
+                line.startsWith("#EXTVLCOPT:", ignoreCase = true) -> {
+                    val directive = line.substringAfter(':')
+                    val split = directive.indexOf('=')
+                    if (split > 0) {
+                        pendingDirectives[directive.substring(0, split).trim().lowercase()] =
+                            directive.substring(split + 1).trim()
+                    }
+                }
+
+                line.startsWith("#EXTHTTP:", ignoreCase = true) -> {
+                    runCatching {
+                        val json = JSONObject(line.substringAfter(':').trim())
+                        json.keys().forEach { key -> pendingDirectives["header:$key"] = json.optString(key) }
+                    }
                 }
 
                 // Any other directive: ignore, but keep the pending EXTINF alive.
@@ -95,6 +122,10 @@ object M3uParser {
                                 epgChannelId = attributes["tvg-id"]?.takeIf { it.isNotBlank() },
                                 number = pendingNumber,
                                 streamUrl = line,
+                                // The cmd column is unused for M3U sources; this avoids a Room migration.
+                                cmd = pendingDirectives.takeIf { it.isNotEmpty() }?.let { directives ->
+                                    "m3u-meta:" + JSONObject(directives as Map<*, *>).toString()
+                                },
                                 sortIndex = index++,
                             )
                         }
@@ -102,6 +133,7 @@ object M3uParser {
                     pendingName = null
                     pendingAttributes = emptyMap()
                     pendingNumber = null
+                    pendingDirectives = linkedMapOf()
                 }
             }
         }
