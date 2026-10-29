@@ -242,7 +242,7 @@ fun PlayerScreen(
                     key.equals("http-origin", ignoreCase = true) ->
                         headers["Origin"] = value
                     key.endsWith("stream_headers", ignoreCase = true) ->
-                        value.split('\\n', '&').forEach { item ->
+                        value.split('&').forEach { item ->
                             val split = item.indexOf('=')
                             if (split > 0) headers[item.substring(0, split).trim()] = item.substring(split + 1).trim()
                         }
