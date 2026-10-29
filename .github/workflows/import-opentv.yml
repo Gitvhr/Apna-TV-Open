@@ -20,9 +20,11 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/opentvproject/opentv.git /tmp/opentv
+          # Keep this repository's .github folder intact. The connected GitHub App
+          # cannot push workflow-file changes without the separate Workflows permission.
           rsync -a --delete \
             --exclude='.git/' \
-            --exclude='.github/workflows/import-opentv.yml' \
+            --exclude='.github/' \
             --exclude='APNA_TV_SETUP.md' \
             /tmp/opentv/ ./
           git config user.name "github-actions[bot]"
