@@ -18,6 +18,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
+import androidx.media3.exoplayer.drm.FrameworkMediaDrm
+import androidx.media3.exoplayer.drm.LocalMediaDrmCallback
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -103,6 +106,8 @@ class PlayerController(
         val userAgent: String,
         /** Per-channel headers supplied by M3U directives (cookies, referer, origin, etc.). */
         val headers: Map<String, String> = emptyMap(),
+        /** Kodi inputstream.adaptive ClearKey value in KID:KEY hexadecimal form. */
+        val clearKey: String? = null,
         /** Live streams are never resumed; VOD is. */
         val startPositionMillis: Long = 0L,
         val isLive: Boolean = true,
@@ -186,6 +191,14 @@ class PlayerController(
         .setSeekForwardIncrementMs(SEEK_INCREMENT_MILLIS)
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(dataSourceFactory)
+                .setDrmSessionManagerProvider { mediaItem ->
+                    val request = mediaItem.localConfiguration?.tag as? Request
+                    val response = request?.clearKey?.let(::clearKeyLicenseResponse)
+                    if (response == null) androidx.media3.exoplayer.drm.DrmSessionManager.DRM_UNSUPPORTED
+                    else DefaultDrmSessionManager.Builder()
+                        .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+                        .build(LocalMediaDrmCallback(response))
+                }
                 .setLoadErrorHandlingPolicy(loadErrorPolicy),
         )
         .setTrackSelector(trackSelector)
@@ -286,6 +299,7 @@ class PlayerController(
 
             val mediaItem = MediaItem.Builder()
                 .setUri(request.url)
+                .setTag(request)
                 .apply {
                     // Only meaningful for live streams; setting it on VOD skews seeking.
                     if (request.isLive) {
@@ -383,6 +397,20 @@ class PlayerController(
         switchJob?.cancel()
         player.release()
     }
+
+    private fun clearKeyLicenseResponse(value: String): ByteArray? = runCatching {
+        val parts = value.trim().split(':', limit = 2)
+        require(parts.size == 2)
+        fun decodeHex(hex: String): ByteArray {
+            val clean = hex.trim().removePrefix("0x").replace("-", "")
+            require(clean.isNotEmpty() && clean.length % 2 == 0 && clean.all { it.digitToIntOrNull(16) != null })
+            return ByteArray(clean.length / 2) { index -> clean.substring(index * 2, index * 2 + 2).toInt(16).toByte() }
+        }
+        fun base64Url(bytes: ByteArray): String = android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
+        val kid = base64Url(decodeHex(parts[0]))
+        val key = base64Url(decodeHex(parts[1]))
+        """{"keys":[{"kty":"oct","kid":"$kid","k":"$key"}],"type":"temporary"}""".encodeToByteArray()
+    }.getOrNull()
 
     private companion object {
         const val DEFAULT_USER_AGENT = "OpenTV/0.1 (Android)"
