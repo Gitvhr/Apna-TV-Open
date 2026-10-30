@@ -248,6 +248,10 @@ fun PlayerScreen(
                         }
                 }
             }
+            val clearKey = metadata?.keys()?.asSequence()
+                ?.firstOrNull { it.equals("inputstream.adaptive.license_key", ignoreCase = true) }
+                ?.let { metadata.optString(it).trim() }
+                ?.takeIf { it.contains(':') && !it.startsWith("http", ignoreCase = true) }
             val userAgent = headers.remove("User-Agent")
                 ?: source?.userAgent
                 ?: "OpenTV/0.1 (Android)"
@@ -257,6 +261,7 @@ fun PlayerScreen(
                     title = channel.shownName,
                     userAgent = userAgent,
                     headers = headers,
+                    clearKey = clearKey,
                     isLive = true,
                 ),
                 debounce = false,
